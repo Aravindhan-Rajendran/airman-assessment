@@ -1,0 +1,199 @@
+// AIRMAN Assessment - Prisma Schema
+// Multi-tenant: shared DB + tenant_id on every row
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum BookingStatus {
+  REQUESTED
+  APPROVED
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
+enum LessonType {
+  TEXT
+  QUIZ
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  courses   Course[]
+  bookings  Booking[]
+  availabilitySlots InstructorAvailability[]
+  auditLogs AuditLog[]
+}
+
+model User {
+  id            String    @id @default(uuid())
+  tenantId      String?
+  email         String
+  passwordHash  String
+  role          Role
+  approved      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+  quizAttempts  QuizAttempt[]
+  bookings      Booking[]
+  assignedBookings Booking[] @relation("AssignedInstructor")
+  auditLogs     AuditLog[]
+  createdCourses Course[]  @relation("CourseCreator")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Course {
+  id          String   @id @default(uuid())
+  tenantId    String
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator     User?    @relation("CourseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  modules     Module[]
+
+  @@index([tenantId])
+  @@index([tenantId, title])
+}
+
+model Module {
+  id        String   @id @default(uuid())
+  courseId  String
+  title     String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id        String     @id @default(uuid())
+  moduleId  String
+  title     String
+  type      LessonType
+  content   String?
+  order     Int        @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  module    Module     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  attempts  QuizAttempt[]
+
+  @@index([moduleId])
+}
+
+model QuizAttempt {
+  id         String   @id @default(uuid())
+  lessonId   String
+  userId     String
+  tenantId   String
+  score      Float
+  total      Int
+  answers    String
+  createdAt  DateTime @default(now())
+  lesson     Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+  @@index([userId])
+  @@index([tenantId])
+}
+
+model InstructorAvailability {
+  id           String   @id @default(uuid())
+  tenantId     String
+  instructorId String
+  startAt      DateTime
+  endAt        DateTime
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([instructorId])
+  @@index([tenantId, startAt, endAt])
+}
+
+model Booking {
+  id           String        @id @default(uuid())
+  tenantId     String
+  studentId    String
+  instructorId String?
+  status       BookingStatus @default(REQUESTED)
+  requestedAt  DateTime
+  startAt      DateTime
+  endAt        DateTime
+  approvedAt   DateTime?
+  assignedAt   DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student      User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  instructor   User?          @relation("AssignedInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([instructorId])
+  @@index([status])
+  @@index([tenantId, startAt, endAt])
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  tenantId      String?
+  userId        String?
+  action        String
+  resource      String
+  resourceId    String?
+  beforeState   String?
+  afterState    String?
+  correlationId String?
+  createdAt     DateTime @default(now())
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([correlationId])
+}
