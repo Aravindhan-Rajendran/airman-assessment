@@ -6,6 +6,19 @@ import { hashPassword } from './services/authService';
 const TEST_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const TEST_TENANT_ID_B = '00000000-0000-0000-0000-000000000002';
 
+describe('Global rate limiter', () => {
+  it('returns 429 when global API rate limit is exceeded', async () => {
+    const limit = 200;
+    for (let i = 0; i < limit; i++) {
+      const res = await request(app).get('/api/tenants/public');
+      expect(res.status).toBe(200);
+    }
+    const overLimit = await request(app).get('/api/tenants/public');
+    expect(overLimit.status).toBe(429);
+    expect(overLimit.body.code).toBe('RATE_LIMIT');
+  });
+});
+
 describe('API Integration', () => {
   let adminId: string;
   let instructorId: string;
@@ -141,6 +154,65 @@ describe('API Integration', () => {
         .expect(200);
       expect(res.body.email).toBe('admin@test.com');
     });
+
+    it('login audit entry includes correlationId when x-correlation-id header is sent', async () => {
+      const correlationId = 'test-login-correlation-id-' + Date.now();
+      await request(app)
+        .post('/api/auth/login')
+        .set('x-correlation-id', correlationId)
+        .send({ email: 'admin@test.com', password: 'Test123!', tenantId: TEST_TENANT_ID })
+        .expect(200);
+
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'admin@test.com', password: 'Test123!', tenantId: TEST_TENANT_ID })
+        .expect(200);
+      const token = loginRes.body.accessToken;
+
+      const auditRes = await request(app)
+        .get('/api/audit?page=1&limit=20')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const loginEntry = (auditRes.body.data as Array<{ action: string; correlationId: string | null }>).find(
+        (e) => e.action === 'LOGIN' && e.correlationId === correlationId
+      );
+      expect(loginEntry).toBeDefined();
+      expect(loginEntry!.correlationId).toBe(correlationId);
+    });
+
+    it('register audit entry includes correlationId when x-correlation-id header is sent', async () => {
+      const correlationId = 'test-register-correlation-id-' + Date.now();
+      const uniqueEmail = `newinstructor-${Date.now()}@test.com`;
+      const adminLogin = await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'admin@test.com', password: 'Test123!', tenantId: TEST_TENANT_ID })
+        .expect(200);
+      const adminToken = adminLogin.body.accessToken;
+
+      await request(app)
+        .post('/api/auth/register')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('x-correlation-id', correlationId)
+        .send({
+          email: uniqueEmail,
+          password: 'Password123!',
+          role: 'INSTRUCTOR',
+          tenantId: TEST_TENANT_ID,
+        })
+        .expect(201);
+
+      const auditRes = await request(app)
+        .get('/api/audit?page=1&limit=50')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      const registerEntry = (auditRes.body.data as Array<{ action: string; resource: string; correlationId: string | null }>).find(
+        (e) => e.action === 'CREATE' && e.resource === 'USER' && e.correlationId === correlationId
+      );
+      expect(registerEntry).toBeDefined();
+      expect(registerEntry!.correlationId).toBe(correlationId);
+    });
   });
 
   describe('Booking conflict detection', () => {
@@ -230,6 +302,52 @@ describe('API Integration', () => {
         .get(`/api/courses/${courseIdA}`)
         .set('Authorization', `Bearer ${tokenB}`);
       expect(resB.status).toBe(404);
+    });
+
+    it('Admin from tenant A cannot access tenant B audit logs via query.tenantId', async () => {
+      await prisma.auditLog.create({
+        data: {
+          tenantId: TEST_TENANT_ID,
+          userId: adminId,
+          action: 'AUDIT_TEST_A',
+          resource: 'TEST',
+          resourceId: 'log-tenant-a',
+          afterState: '{}',
+        },
+      });
+      await prisma.auditLog.create({
+        data: {
+          tenantId: TEST_TENANT_ID_B,
+          userId: null,
+          action: 'AUDIT_TEST_B',
+          resource: 'TEST',
+          resourceId: 'log-tenant-b',
+          afterState: '{}',
+        },
+      });
+
+      const loginA = await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'admin@test.com', password: 'Test123!', tenantId: TEST_TENANT_ID })
+        .expect(200);
+      const tokenA = loginA.body.accessToken;
+
+      // Explicitly pass tenant B ID in query; must be ignored (auth context = tenant A).
+      // If audit route ever uses query.tenantId in the where clause, this test will fail.
+      const res = await request(app)
+        .get(`/api/audit?tenantId=${TEST_TENANT_ID_B}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      const logs = res.body.data as Array<{ tenantId: string | null; resourceId: string }>;
+      expect(Array.isArray(logs)).toBe(true);
+
+      // All returned logs must belong to tenant A (authenticated tenant).
+      expect(logs.every((log) => log.tenantId === TEST_TENANT_ID)).toBe(true);
+
+      // Response must NOT contain any tenant B data (override must be ignored).
+      expect(logs.some((log) => log.tenantId === TEST_TENANT_ID_B)).toBe(false);
+      expect(logs.some((log) => log.resourceId === 'log-tenant-b')).toBe(false);
     });
   });
 });

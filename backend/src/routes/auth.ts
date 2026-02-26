@@ -28,6 +28,10 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
+const logoutSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
 const approveStudentSchema = z.object({
   userId: z.string().uuid(),
   approved: z.boolean(),
@@ -36,10 +40,12 @@ const approveStudentSchema = z.object({
 router.post('/login', async (req, res, next) => {
   try {
     const body = loginSchema.parse(req.body);
+    const correlationId = (req.headers['x-correlation-id'] as string) || undefined;
     const result = await authService.login({
       email: body.email,
       password: body.password,
       tenantId: body.tenantId,
+      correlationId,
     });
     res.json(result);
   } catch (e) {
@@ -65,6 +71,20 @@ router.post('/refresh', async (req, res, next) => {
   }
 });
 
+router.post('/logout', async (req, res, next) => {
+  try {
+    const body = logoutSchema.parse(req.body);
+    await authService.logout(body.refreshToken);
+    res.status(204).send();
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      next(new AppError(400, e.errors.map((x) => x.message).join(', '), 'VALIDATION_ERROR'));
+      return;
+    }
+    next(e);
+  }
+});
+
 router.post(
   '/register',
   authMiddleware,
@@ -79,11 +99,13 @@ router.post(
         return;
       }
       const tenantId = req.context!.tenantId!;
+      const correlationId = (req.headers['x-correlation-id'] as string) || undefined;
       const result = await authService.register({
         ...body,
         role: body.role as Role,
         tenantId,
         createdBy: req.context!.userId,
+        correlationId,
       });
       res.status(201).json(result);
     } catch (e) {

@@ -8,7 +8,7 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string, tenantId?: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
 
@@ -50,9 +50,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/dashboard');
   };
 
-  const logout = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+  const logout = async () => {
+    const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
+    if (refreshToken) {
+      try {
+        await authApi.logout(refreshToken);
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+    }
     setUser(null);
     router.push('/login');
   };

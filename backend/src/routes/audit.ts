@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { authMiddleware, requireAuth } from '../middleware/auth';
 import { requireRole } from '../middleware/rbac';
+import { requireTenant } from '../middleware/tenant';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -10,26 +11,20 @@ const router = Router();
 const listSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  tenantId: z.string().uuid().optional(),
 });
-
-function getTenantId(req: Request): string | null {
-  return req.context?.tenantId ?? null;
-}
 
 router.get(
   '/',
   authMiddleware,
   requireAuth,
   requireRole('ADMIN'),
+  requireTenant,
   async (req, res, next) => {
     try {
-      const tenantId = getTenantId(req);
+      const tenantId = req.context!.tenantId!;
       const query = listSchema.parse(req.query);
       const skip = (query.page - 1) * query.limit;
-      const where: { tenantId?: string } = {};
-      if (tenantId) where.tenantId = tenantId;
-      if (query.tenantId) where.tenantId = query.tenantId;
+      const where = { tenantId };
 
       const [logs, total] = await Promise.all([
         prisma.auditLog.findMany({

@@ -23,7 +23,7 @@ export default function DashboardLayout({
           <Link href="/dashboard/admin">Admin</Link>
         )}
         <span style={{ marginLeft: 'auto' }}>{user.email} ({user.role})</span>
-        <a href="#" onClick={(e) => { e.preventDefault(); logout(); }}>Logout</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); void logout(); }}>Logout</a>
       </nav>
       <main className="container">{children}</main>
     </>

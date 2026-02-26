@@ -56,6 +56,7 @@ model User {
   quizAttempts  QuizAttempt[]
   bookings      Booking[]
   assignedBookings Booking[] @relation("AssignedInstructor")
+  instructorAvailability InstructorAvailability[]
   auditLogs     AuditLog[]
   createdCourses Course[]  @relation("CourseCreator")
 
@@ -89,8 +90,8 @@ model Course {
   creator     User?    @relation("CourseCreator", fields: [createdById], references: [id], onDelete: SetNull)
   modules     Module[]
 
+  @@unique([tenantId, title])
   @@index([tenantId])
-  @@index([tenantId, title])
 }
 
 model Module {
@@ -146,6 +147,7 @@ model InstructorAvailability {
   endAt        DateTime
   createdAt    DateTime @default(now())
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instructor   User     @relation(fields: [instructorId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([instructorId])

@@ -1,4 +1,4 @@
-import argon2 from 'argon2';
+import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../db';
@@ -8,21 +8,39 @@ import { AppError } from '../middleware/errorHandler';
 import { Role } from '@prisma/client';
 import { auditService } from './auditService';
 
-export type LoginInput = { email: string; password: string; tenantId?: string };
+const SALT_ROUNDS = 12;
+
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
+export type LoginInput = { email: string; password: string; tenantId?: string; correlationId?: string };
 export type RegisterInput = {
   email: string;
   password: string;
   role: Role;
   tenantId: string;
   createdBy?: string;
+  correlationId?: string;
 };
 
 export async function hashPassword(password: string): Promise<string> {
-  return argon2.hash(password, { type: argon2.argon2id });
+  return bcrypt.hash(password, SALT_ROUNDS);
 }
 
 export async function verifyPassword(hash: string, password: string): Promise<boolean> {
-  return argon2.verify(hash, password);
+  return bcrypt.compare(password, hash);
+}
+
+export function validateStrongPassword(password: string): void {
+  if (password.length < 8) {
+    throw new AppError(400, 'Password must be at least 8 characters', 'VALIDATION_ERROR');
+  }
+  if (!STRONG_PASSWORD_REGEX.test(password)) {
+    throw new AppError(
+      400,
+      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)',
+      'VALIDATION_ERROR'
+    );
+  }
 }
 
 export function signAccessToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
@@ -85,6 +103,7 @@ export async function login(input: LoginInput): Promise<{
     resource: 'USER',
     resourceId: user.id,
     afterState: JSON.stringify({ email: user.email, role: user.role }),
+    correlationId: input.correlationId,
   });
 
   return {
@@ -138,6 +157,10 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   };
 }
 
+export async function logout(refreshToken: string): Promise<void> {
+  await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+}
+
 export async function register(input: RegisterInput): Promise<{
   id: string;
   email: string;
@@ -152,6 +175,7 @@ export async function register(input: RegisterInput): Promise<{
     throw new AppError(409, 'User with this email already exists in this tenant', 'CONFLICT');
   }
 
+  validateStrongPassword(input.password);
   const passwordHash = await hashPassword(input.password);
   const approved = input.role !== 'STUDENT';
 
@@ -172,6 +196,7 @@ export async function register(input: RegisterInput): Promise<{
     resource: 'USER',
     resourceId: user.id,
     afterState: JSON.stringify({ email: user.email, role: user.role }),
+    correlationId: input.correlationId,
   });
 
   return {
@@ -187,4 +212,5 @@ export const authService = {
   login,
   register,
   refreshAccessToken,
+  logout,
 };

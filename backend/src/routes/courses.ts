@@ -10,6 +10,10 @@ import { cacheService } from '../services/cacheService';
 import { LessonType, Prisma } from '@prisma/client';
 import type { Request } from 'express';
 
+function isPrismaUniqueViolation(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002';
+}
+
 const router = Router();
 
 const paginationSchema = z.object({
@@ -36,6 +40,72 @@ const createLessonSchema = z.object({
   content: z.string().optional(),
   order: z.number().int().min(0).optional(),
 });
+
+type QuizQuestion = { id: string; text: string; options: { id: string; text: string }[]; correctOptionId: string };
+type QuizContent = { questions: QuizQuestion[] };
+
+function validateQuizContent(content: string, courseId: string): Promise<void> {
+  return (async () => {
+    let parsed: QuizContent;
+    try {
+      parsed = JSON.parse(content) as QuizContent;
+    } catch {
+      throw new AppError(400, 'Invalid quiz content JSON', 'VALIDATION_ERROR');
+    }
+    const questions = parsed?.questions;
+    if (!Array.isArray(questions) || questions.length === 0) {
+      throw new AppError(400, 'Quiz must have at least one question', 'VALIDATION_ERROR');
+    }
+    const questionTexts = new Set<string>();
+    for (const q of questions) {
+      if (!q || typeof q.text !== 'string' || !q.text.trim()) {
+        throw new AppError(400, 'Question text is required', 'VALIDATION_ERROR');
+      }
+      const text = q.text.trim().toLowerCase();
+      if (questionTexts.has(text)) {
+        throw new AppError(400, 'Duplicate question in this quiz: each question must be unique', 'DUPLICATE_QUESTION');
+      }
+      questionTexts.add(text);
+      if (!Array.isArray(q.options) || q.options.length < 4) {
+        throw new AppError(400, 'Each question must have at least 4 options', 'VALIDATION_ERROR');
+      }
+      const correctId = q.correctOptionId;
+      const optionIds = new Set((q.options as { id: string }[]).map((o) => o.id));
+      if (!correctId || !optionIds.has(correctId)) {
+        throw new AppError(400, 'Exactly one correct answer must be selected for each question', 'VALIDATION_ERROR');
+      }
+      const validOptions = (q.options as { id: string; text: string }[]).filter((o) => o.text && String(o.text).trim());
+      if (validOptions.length < 4) {
+        throw new AppError(400, 'Each question must have at least 4 options with non-empty text', 'VALIDATION_ERROR');
+      }
+    }
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: { modules: { include: { lessons: { where: { type: 'QUIZ' }, select: { content: true } } } } },
+    });
+    if (!course) return;
+    const existingTexts = new Set<string>();
+    for (const mod of course.modules) {
+      for (const lesson of mod.lessons) {
+        if (!lesson.content) continue;
+        try {
+          const c = JSON.parse(lesson.content) as QuizContent;
+          for (const q of c.questions || []) {
+            if (q?.text?.trim()) existingTexts.add(q.text.trim().toLowerCase());
+          }
+        } catch {
+          /**/
+        }
+      }
+    }
+    for (const q of questions) {
+      const text = q.text.trim().toLowerCase();
+      if (existingTexts.has(text)) {
+        throw new AppError(400, 'A question with this text already exists in this course', 'DUPLICATE_QUESTION');
+      }
+    }
+  })();
+}
 
 const quizAttemptSchema = z.object({
   answers: z.record(z.string(), z.string()),
@@ -102,9 +172,17 @@ router.post(
     try {
       const tenantId = getTenantId(req);
       const body = createCourseSchema.parse(req.body);
+      const existing = await prisma.course.findFirst({
+        where: { tenantId, title: body.title.trim() },
+      });
+      if (existing) {
+        next(new AppError(409, 'Course name already exists', 'COURSE_NAME_EXISTS'));
+        return;
+      }
       const course = await prisma.course.create({
         data: {
-          ...body,
+          title: body.title.trim(),
+          description: body.description?.trim() ?? null,
           tenantId,
           createdById: req.context!.userId,
         },
@@ -116,11 +194,12 @@ router.post(
         resource: 'COURSE',
         resourceId: course.id,
         afterState: JSON.stringify({ title: course.title }),
-        correlationId: req.headers['x-correlation-id'] as string,
+        correlationId: (req.headers['x-request-id'] || req.headers['x-correlation-id']) as string,
       });
       res.status(201).json(course);
     } catch (e) {
       if (e instanceof z.ZodError) next(new AppError(400, e.errors.map((x) => x.message).join(', '), 'VALIDATION_ERROR'));
+      else if (isPrismaUniqueViolation(e)) next(new AppError(409, 'Course name already exists', 'COURSE_NAME_EXISTS'));
       else next(e);
     }
   }
@@ -159,9 +238,18 @@ router.patch(
       const existing = await prisma.course.findFirst({ where: { id: req.params.courseId, tenantId } });
       if (!existing) return next(new AppError(404, 'Course not found', 'NOT_FOUND'));
       const body = updateCourseSchema.parse(req.body);
+      if (body.title !== undefined) {
+        const duplicate = await prisma.course.findFirst({
+          where: { tenantId, title: body.title.trim(), id: { not: existing.id } },
+        });
+        if (duplicate) {
+          next(new AppError(409, 'Course name already exists', 'COURSE_NAME_EXISTS'));
+          return;
+        }
+      }
       const course = await prisma.course.update({
         where: { id: existing.id },
-        data: body,
+        data: body.title !== undefined ? { ...body, title: body.title.trim() } : body,
       });
       await auditService.log({
         userId: req.context!.userId,
@@ -171,11 +259,12 @@ router.patch(
         resourceId: course.id,
         beforeState: JSON.stringify({ title: existing.title }),
         afterState: JSON.stringify({ title: course.title }),
-        correlationId: req.headers['x-correlation-id'] as string,
+        correlationId: (req.headers['x-request-id'] || req.headers['x-correlation-id']) as string,
       });
       res.json(course);
     } catch (e) {
       if (e instanceof z.ZodError) next(new AppError(400, e.errors.map((x) => x.message).join(', '), 'VALIDATION_ERROR'));
+      else if (isPrismaUniqueViolation(e)) next(new AppError(409, 'Course name already exists', 'COURSE_NAME_EXISTS'));
       else next(e);
     }
   }
@@ -220,6 +309,18 @@ router.post(
       });
       if (!mod) return next(new AppError(404, 'Module not found', 'NOT_FOUND'));
       const body = createLessonSchema.parse(req.body);
+      if (body.type === 'QUIZ') {
+        if (!body.content?.trim()) {
+          next(new AppError(400, 'Quiz content is required', 'VALIDATION_ERROR'));
+          return;
+        }
+        try {
+          await validateQuizContent(body.content, course.id);
+        } catch (err) {
+          next(err);
+          return;
+        }
+      }
       const lesson = await prisma.lesson.create({
         data: {
           moduleId: mod.id,
@@ -232,6 +333,7 @@ router.post(
       res.status(201).json(lesson);
     } catch (e) {
       if (e instanceof z.ZodError) next(new AppError(400, e.errors.map((x) => x.message).join(', '), 'VALIDATION_ERROR'));
+      else if (e instanceof AppError) next(e);
       else next(e);
     }
   }

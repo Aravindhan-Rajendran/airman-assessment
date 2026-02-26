@@ -55,22 +55,27 @@ Production-minded AIRMAN Core: Authentication, RBAC, Learning (Maverick-style), 
    ```
    Frontend runs at http://localhost:3000. Set `NEXT_PUBLIC_API_URL=http://localhost:4000` if needed.
 
-### One-command run (Docker Compose)
+### Run everything in Docker (build + run)
+
+From the project root:
 
 ```bash
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
-- Frontend: http://localhost:3000  
-- Backend: http://localhost:4000  
-- PostgreSQL: localhost:5432 (user `postgres`, password `postgres`, db `airman`)
-
-Run migrations and seed inside the backend container once:
+Or build and run in one go:
 
 ```bash
-docker-compose exec backend npx prisma migrate deploy
-docker-compose exec backend npx prisma db seed
+docker compose up -d --build
 ```
+
+- **Frontend**: http://localhost:3000  
+- **Backend**: http://localhost:4000  
+- **PostgreSQL**: localhost:5432 (user `postgres`, password `postgres`, db `airman`)  
+- **Redis**: localhost:6379  
+
+Migrations and DB seed run automatically when the backend container starts. No need to run them manually.
 
 ## Key Technical Decisions & Tradeoffs
 
@@ -135,7 +140,7 @@ Base URL: `http://localhost:4000` (or your backend URL).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/audit | List audit logs (Admin, paginated). Query: `page`, `limit`, `tenantId?`. |
+| GET | /api/audit | List audit logs (Admin, tenant-scoped, paginated). Query: `page`, `limit`. Tenant is taken from auth context only. |
 
 ## Sample Requests
 
@@ -182,9 +187,29 @@ Use the tenant ID from `GET /api/tenants/public` when logging in if you have mul
 - `QuizAttempt`: lessonId, userId, tenantId  
 - `InstructorAvailability`: tenantId, instructorId, (tenantId, startAt, endAt)  
 
+## Production
+
+When `NODE_ENV=production`, the backend **requires** the following environment variables to be set and non-empty. The process will exit with an error if they are missing (no fallback secrets are used in production).
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JWT_SECRET` | **Yes** | Secret used to sign access JWTs. Use a long, random value (e.g. 32+ chars). |
+| `JWT_REFRESH_SECRET` | **Yes** | Secret used to sign refresh tokens. Must be different from `JWT_SECRET`. |
+| `CORS_ORIGINS` | **Yes** | Comma-separated list of allowed origins (e.g. `https://app.example.com,https://admin.example.com`). Requests from other origins are rejected. |
+| `DATABASE_URL` | Yes | PostgreSQL connection string. |
+| `PORT` | No | Defaults to `4000`. |
+| `JWT_EXPIRES_IN` | No | Access token TTL (default `15m`). |
+| `JWT_REFRESH_EXPIRES_IN` | No | Refresh token TTL (default `7d`). |
+
+**Why CORS allowlist in production:** Allowing any origin (`origin: true`) lets any website send credentialed requests to your API. A malicious site could trigger actions as the logged-in user. In production, set `CORS_ORIGINS` to your frontend origin(s) only (e.g. your Vercel or custom domain).
+
+**Why fallback secrets are dangerous:** If the app starts in production with default or placeholder secrets, anyone who knows or guesses them can forge valid JWTs and impersonate users (including admins). Requiring explicit secrets in production prevents accidental deployment with weak or well-known values.
+
+In **development** (`NODE_ENV` not set or not `production`), the backend allows default dev-only values for `JWT_SECRET` and `JWT_REFRESH_SECRET` so you can run locally without setting them. Never use those defaults in production.
+
 ## Cloud Deployment (Optional)
 
-- **Backend**: Deploy to Render, Railway, or Fly.io. Set `DATABASE_URL` to a managed Postgres (e.g. Render Postgres, Supabase). Set `JWT_SECRET` and `JWT_REFRESH_SECRET`. Run `prisma migrate deploy` in build or release phase.
+- **Backend**: Deploy to Render, Railway, or Fly.io. Set `DATABASE_URL` to a managed Postgres (e.g. Render Postgres, Supabase). **Set `NODE_ENV=production` and provide `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `CORS_ORIGINS`** (see Production above). Run `prisma migrate deploy` in build or release phase.
 - **Frontend**: Deploy to Vercel. Set `NEXT_PUBLIC_API_URL` to your backend URL.
 - **Environments**: Use separate projects or env vars for dev/staging/prod. Never commit secrets; use the platform’s secret management.
 - **Rollback**: Redeploy previous image/revision from the platform’s dashboard or CLI.

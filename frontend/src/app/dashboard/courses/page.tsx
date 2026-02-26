@@ -24,23 +24,36 @@ export default function CoursesPage() {
 
   if (data === null) return <div>Loading...</div>;
 
+  const canCreate = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+
   return (
     <div>
       <h1>Courses</h1>
       {error && <p className="error">{error}</p>}
       <p style={{ marginBottom: '1rem', opacity: 0.9 }}>
         {data.data.length > 0 ? 'Click a course to open it and view lessons and quizzes.' : ''}
+        {canCreate && (
+          <>
+            {' '}
+            <Link href="/dashboard/courses/new">Create a new course</Link>.
+          </>
+        )}
       </p>
-      <div style={{ marginBottom: '1rem' }}>
+      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: 12 }}>
         <input
           placeholder="Search by course or module title"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           style={{ width: 300, marginRight: 8 }}
         />
+        {canCreate && (
+          <Link href="/dashboard/courses/new" className="button" style={{ display: 'inline-block' }}>
+            Create course
+          </Link>
+        )}
       </div>
       {data.data.length === 0 ? (
-        <p>No courses yet. {user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN' ? 'Create one from the course detail page or create a new course.' : 'Your school has not added any courses.'}</p>
+        <p>No courses yet. {canCreate ? 'Create one to get started.' : 'Your school has not added any courses.'}</p>
       ) : (
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {data.data.map((c) => (

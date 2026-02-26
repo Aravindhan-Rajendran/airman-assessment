@@ -8,8 +8,9 @@ import { v4 as uuidv4 } from 'uuid';
 
 export async function authMiddleware(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
-  const correlationId = (req.headers['x-correlation-id'] as string) || uuidv4();
+  const correlationId = (req.headers['x-request-id'] as string) || (req.headers['x-correlation-id'] as string) || uuidv4();
   req.headers['x-correlation-id'] = correlationId;
+  req.headers['x-request-id'] = correlationId;
 
   if (!authHeader?.startsWith('Bearer ')) {
     next(new AppError(401, 'Missing or invalid authorization header', 'UNAUTHORIZED'));

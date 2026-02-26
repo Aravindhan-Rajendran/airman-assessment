@@ -1,0 +1,417 @@
+{
+  "info": {
+    "name": "AIRMAN Core API",
+    "description": "Sample requests for AIRMAN Level 1: Auth, Learning (courses/lessons/quiz), Scheduling (bookings, availability). Set {{baseUrl}} and {{accessToken}} after login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "tenantId", "value": "" },
+    { "key": "courseId", "value": "" },
+    { "key": "moduleId", "value": "" },
+    { "key": "lessonId", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "instructorId", "value": "" },
+    { "key": "userId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Get tenants (public)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/tenants/public"
+          }
+        },
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "  if (json.user && json.user.tenantId) pm.collectionVariables.set('tenantId', json.user.tenantId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@schoolalpha.com\",\n  \"password\": \"Admin123!\",\n  \"tenantId\": \"{{tenantId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Login (Student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"student@schoolalpha.com\",\n  \"password\": \"Password123!\",\n  \"tenantId\": \"{{tenantId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"<paste refresh token from login>\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/refresh"
+          }
+        },
+        {
+          "name": "Me (current user)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/auth/me"
+          }
+        },
+        {
+          "name": "Register instructor (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newinstructor@schoolalpha.com\",\n  \"password\": \"Password123!\",\n  \"role\": \"INSTRUCTOR\",\n  \"tenantId\": \"{{tenantId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        },
+        {
+          "name": "List pending students (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/auth/students-pending"
+          }
+        },
+        {
+          "name": "Approve student (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"approved\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/approve-student"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Courses (Learning)",
+      "item": [
+        {
+          "name": "List courses (paginated, search)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/courses?page=1&limit=10&search=Private"
+          }
+        },
+        {
+          "name": "Get course by id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/courses/{{courseId}}"
+          }
+        },
+        {
+          "name": "Create course (Instructor/Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('courseId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Instrument Rating Ground\",\n  \"description\": \"IR theory and procedures\"\n}"
+            },
+            "url": "{{baseUrl}}/api/courses"
+          }
+        },
+        {
+          "name": "Create module",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('moduleId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Navigation\",\n  \"order\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/courses/{{courseId}}/modules"
+          }
+        },
+        {
+          "name": "Create lesson (TEXT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"VOR and DME\",\n  \"type\": \"TEXT\",\n  \"content\": \"VOR provides bearing; DME provides distance.\",\n  \"order\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/courses/{{courseId}}/modules/{{moduleId}}/lessons"
+          }
+        },
+        {
+          "name": "Create lesson (QUIZ)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('lessonId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Navigation Quiz\",\n  \"type\": \"QUIZ\",\n  \"content\": \"{\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"text\\\":\\\"What does VOR stand for?\\\",\\\"options\\\":[{\\\"id\\\":\\\"a\\\",\\\"text\\\":\\\"VHF Omnidirectional Range\\\"},{\\\"id\\\":\\\"b\\\",\\\"text\\\":\\\"Visual Omni Radar\\\"}],\\\"correctOptionId\\\":\\\"a\\\"}]}\",\n  \"order\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/courses/{{courseId}}/modules/{{moduleId}}/lessons"
+          }
+        },
+        {
+          "name": "Submit quiz attempt (Student)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": {\n    \"q1\": \"a\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/courses/{{courseId}}/modules/{{moduleId}}/lessons/{{lessonId}}/attempt"
+          }
+        },
+        {
+          "name": "List attempts for lesson",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/courses/{{courseId}}/modules/{{moduleId}}/lessons/{{lessonId}}/attempts?page=1&limit=10"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scheduling",
+      "item": [
+        {
+          "name": "List instructors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/instructors"
+          }
+        },
+        {
+          "name": "Add availability (Instructor)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startAt\": \"2025-06-02T09:00:00.000Z\",\n  \"endAt\": \"2025-06-02T17:00:00.000Z\"\n}"
+            },
+            "url": "{{baseUrl}}/api/scheduling/availability"
+          }
+        },
+        {
+          "name": "List availability",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/scheduling/availability?page=1&limit=20"
+          }
+        },
+        {
+          "name": "Create booking (Student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('bookingId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedAt\": \"2025-05-26T08:00:00.000Z\",\n  \"startAt\": \"2025-06-02T10:00:00.000Z\",\n  \"endAt\": \"2025-06-02T11:00:00.000Z\"\n}"
+            },
+            "url": "{{baseUrl}}/api/scheduling/bookings"
+          }
+        },
+        {
+          "name": "List bookings",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/scheduling/bookings?page=1&limit=20"
+          }
+        },
+        {
+          "name": "Weekly bookings",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/scheduling/bookings/weekly?weekStart=2025-06-02"
+          }
+        },
+        {
+          "name": "Approve booking (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/scheduling/bookings/{{bookingId}}/approve"
+          }
+        },
+        {
+          "name": "Assign instructor (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instructorId\": \"{{instructorId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/scheduling/bookings/{{bookingId}}/assign"
+          }
+        },
+        {
+          "name": "Complete booking",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/scheduling/bookings/{{bookingId}}/complete"
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/scheduling/bookings/{{bookingId}}/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "List audit logs (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/api/audit?page=1&limit=20"
+          }
+        }
+      ]
+    }
+  ]
+}
