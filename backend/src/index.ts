@@ -16,11 +16,12 @@ const app = express();
 
 if (config.nodeEnv === 'production') {
   const allowedOrigins = config.cors.allowedOrigins;
+  const allowAnyOrigin = allowedOrigins.includes('*');
   app.use(
     cors({
       origin: (origin, cb) => {
         if (!origin) return cb(null, true);
-        if (allowedOrigins.includes(origin)) return cb(null, true);
+        if (allowAnyOrigin || allowedOrigins.includes(origin)) return cb(null, true);
         cb(null, false);
       },
       credentials: true,

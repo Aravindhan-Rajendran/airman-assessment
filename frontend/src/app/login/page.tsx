@@ -4,12 +4,13 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '@/context/AuthContext';
-import { tenantsApi } from '@/lib/api';
+import { API_BASE } from '@/lib/api';
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
   const [tenants, setTenants] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [tenantsError, setTenantsError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -27,11 +28,14 @@ export default function LoginPage() {
   const tenantId = watch('tenantId');
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-    fetch(`${base}/api/tenants/public`)
-      .then((r) => r.json())
-      .then((r: { data: { id: string; name: string; slug: string }[] }) => setTenants(r.data || []))
-      .catch(() => {});
+    setTenantsError('');
+    fetch(`${API_BASE}/api/tenants/public`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Backend returned ${r.status}`);
+        return r.json();
+      })
+      .then((r: { data?: { id: string; name: string; slug: string }[] }) => setTenants(r.data || []))
+      .catch(() => setTenantsError('Could not load schools. Check that the backend is running and CORS is configured.'));
   }, []);
 
   const onSubmit = handleSubmit(async (data) => {
@@ -108,6 +112,11 @@ export default function LoginPage() {
               </span>
             )}
           </div>
+          {tenantsError && (
+            <div className="form-message form-message--error" role="alert">
+              {tenantsError}
+            </div>
+          )}
           {submitError && (
             <div className="form-message form-message--error" role="alert">
               {submitError}
