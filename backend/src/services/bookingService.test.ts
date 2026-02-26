@@ -8,6 +8,8 @@ jest.mock('../db', () => ({
   },
 }));
 
+// Need to get mocked prisma instance after jest.mock()
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { prisma } = require('../db');
 
 describe('bookingService', () => {
