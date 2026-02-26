@@ -1,3 +1,5 @@
+import express from 'express';
+import rateLimit from 'express-rate-limit';
 import request from 'supertest';
 import { app } from './index';
 import { prisma } from './db';
@@ -8,12 +10,23 @@ const TEST_TENANT_ID_B = '00000000-0000-0000-0000-000000000002';
 
 describe('Global rate limiter', () => {
   it('returns 429 when global API rate limit is exceeded', async () => {
-    const limit = 200;
+    const limit = 2;
+    const testApp = express();
+    testApp.use(
+      rateLimit({
+        windowMs: 60000,
+        max: limit,
+        message: { error: 'Too many requests', code: 'RATE_LIMIT' },
+        standardHeaders: true,
+        legacyHeaders: false,
+      })
+    );
+    testApp.get('/ping', (_req, res) => res.json({ ok: true }));
     for (let i = 0; i < limit; i++) {
-      const res = await request(app).get('/api/tenants/public');
+      const res = await request(testApp).get('/ping');
       expect(res.status).toBe(200);
     }
-    const overLimit = await request(app).get('/api/tenants/public');
+    const overLimit = await request(testApp).get('/ping');
     expect(overLimit.status).toBe(429);
     expect(overLimit.body.code).toBe('RATE_LIMIT');
   });

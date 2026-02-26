@@ -1,5 +1,6 @@
 const nodeEnv = process.env.NODE_ENV || 'development';
 const isProduction = nodeEnv === 'production';
+const isTest = nodeEnv === 'test';
 
 function requireProductionSecrets(): void {
   if (!isProduction) return;
@@ -47,17 +48,24 @@ export const config = {
         10
       ),
       max: parseInt(
-        process.env.RATE_LIMIT_GLOBAL_MAX || (isProduction ? '60' : '200'),
+        process.env.RATE_LIMIT_GLOBAL_MAX ||
+          (isTest ? '100000' : isProduction ? '60' : '200'),
         10
       ),
     },
     auth: {
       windowMs: parseInt(process.env.RATE_LIMIT_AUTH_WINDOW_MS || '900000', 10),
-      max: parseInt(process.env.RATE_LIMIT_AUTH_MAX || '10', 10),
+      max: parseInt(
+        process.env.RATE_LIMIT_AUTH_MAX || (isTest ? '100000' : '10'),
+        10
+      ),
     },
     booking: {
       windowMs: parseInt(process.env.RATE_LIMIT_BOOKING_WINDOW_MS || '60000', 10),
-      max: parseInt(process.env.RATE_LIMIT_BOOKING_MAX || '20', 10),
+      max: parseInt(
+        process.env.RATE_LIMIT_BOOKING_MAX || (isTest ? '100000' : '20'),
+        10
+      ),
     },
   },
   workflow: {
