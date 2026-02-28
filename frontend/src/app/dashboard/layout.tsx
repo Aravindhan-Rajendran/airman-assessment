@@ -19,7 +19,7 @@ export default function DashboardLayout({
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/dashboard/courses">Courses</Link>
         <Link href="/dashboard/schedule">Schedule</Link>
-        {(user.role === 'ADMIN' || user.role === 'INSTRUCTOR') && (
+        {user.role === 'ADMIN' && (
           <Link href="/dashboard/admin">Admin</Link>
         )}
         <span style={{ marginLeft: 'auto' }}>{user.email} ({user.role})</span>

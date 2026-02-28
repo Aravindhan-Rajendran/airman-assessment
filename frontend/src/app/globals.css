@@ -194,6 +194,15 @@ nav a:hover {
 .form-input::placeholder {
   color: var(--color-muted);
 }
+
+/* School dropdown: ensure option text is readable (many browsers use white list background) */
+select.form-input {
+  color: var(--color-text);
+}
+select.form-input option {
+  background: #fff;
+  color: #1e293b;
+}
 .form-submit {
   padding: 0.625rem 1.25rem;
   border-radius: var(--radius-md);

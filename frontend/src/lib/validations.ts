@@ -24,6 +24,7 @@ function parseDateTimeLocal(value: string): Date | null {
 
 export const bookingRequestSchema = z
   .object({
+    name: z.string().min(1, 'Booking name is required').max(200),
     requestedAt: z.string().min(1, 'Request date & time is required'),
     startAt: z.string().min(1, 'Preferred start is required'),
     endAt: z.string().min(1, 'Preferred end is required'),

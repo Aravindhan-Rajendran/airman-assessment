@@ -7,7 +7,7 @@ import { authApi, schedulingApi, instructorsApi, auditApi, type Booking, type Au
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
 export default function AdminPage() {
-  const { user } = useRequireAuth(['ADMIN', 'INSTRUCTOR']);
+  const { user } = useRequireAuth(['ADMIN']);
   const [pending, setPending] = useState<{ id: string; email: string }[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -22,12 +22,13 @@ export default function AdminPage() {
   const [instructorError, setInstructorError] = useState('');
   const [instructorSuccess, setInstructorSuccess] = useState('');
   const [creatingInstructor, setCreatingInstructor] = useState(false);
+  const [students, setStudents] = useState<{ id: string; email: string; approved: boolean; createdAt: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditPage, setAuditPage] = useState(1);
   const [auditTotal, setAuditTotal] = useState(0);
 
   const loadBookings = useCallback(() => {
-    if (user?.role !== 'ADMIN' && user?.role !== 'INSTRUCTOR') return;
+    if (user?.role !== 'ADMIN') return;
     setBookingsLoading(true);
     setBookingsError(null);
     schedulingApi
@@ -38,8 +39,9 @@ export default function AdminPage() {
   }, [user?.role]);
 
   useEffect(() => {
-    if (user?.role !== 'ADMIN' && user?.role !== 'INSTRUCTOR') return;
+    if (user?.role !== 'ADMIN') return;
     authApi.listPendingStudents().then((r) => setPending(r.data)).catch(() => {});
+    authApi.listStudents().then((r) => setStudents(r.data)).catch(() => setStudents([]));
     instructorsApi.list().then((r) => setInstructors(r.data)).catch(() => setInstructors([]));
     loadBookings();
   }, [user?.role, loadBookings]);
@@ -54,6 +56,7 @@ export default function AdminPage() {
   const handleApprove = async (userId: string, approved: boolean) => {
     await authApi.approveStudent(userId, approved);
     setPending((p) => p.filter((x) => x.id !== userId));
+    authApi.listStudents().then((r) => setStudents(r.data)).catch(() => {});
   };
 
   const runBookingAction = async (
@@ -203,8 +206,45 @@ export default function AdminPage() {
               </div>
             </form>
           </section>
+          <section className="card" style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{ marginTop: 0 }}>Instructor list</h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--color-muted-soft)', marginBottom: 12 }}>
+              All instructors in your school. Use them when assigning bookings.
+            </p>
+            {instructors.length === 0 ? (
+              <p>No instructors yet. Create one above.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {instructors.map((inst) => (
+                  <li key={inst.id} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--color-border)' }}>
+                    {inst.email}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section className="card" style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{ marginTop: 0 }}>All students</h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--color-muted-soft)', marginBottom: 12 }}>
+              All students in your school.
+            </p>
+            {students.length === 0 ? (
+              <p>No students yet.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {students.map((s) => (
+                  <li key={s.id} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--color-border)' }}>
+                    {s.email}
+                    <span style={{ marginLeft: 8, fontSize: '0.875rem', color: 'var(--color-muted-soft)' }}>
+                      {s.approved ? '(approved)' : '(pending)'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           <section className="card">
-          <h2>Pending students</h2>
+          <h2 style={{ marginTop: 0 }}>Pending students</h2>
           <ul style={{ listStyle: 'none' }}>
             {pending.map((s) => (
               <li key={s.id} style={{ marginBottom: 8 }}>

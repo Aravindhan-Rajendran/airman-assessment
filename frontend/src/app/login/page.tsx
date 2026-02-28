@@ -23,6 +23,7 @@ export default function LoginPage() {
     handleSubmit,
     formState: { errors },
     watch,
+    clearErrors,
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: { tenantId: '', email: '', password: '' },
@@ -30,6 +31,10 @@ export default function LoginPage() {
   });
 
   const tenantId = watch('tenantId');
+
+  const tenantReg = register('tenantId');
+  const emailReg = register('email');
+  const passwordReg = register('password');
 
   const loadTenants = () => {
     setTenantsError('');
@@ -80,7 +85,12 @@ export default function LoginPage() {
             <label htmlFor="tenantId">School <span className="form-required">*</span></label>
             <select
               id="tenantId"
-              {...register('tenantId')}
+              {...tenantReg}
+              onFocus={() => clearErrors('tenantId')}
+              onChange={(e) => {
+                clearErrors('tenantId');
+                tenantReg.onChange(e);
+              }}
               className="form-input"
               aria-invalid={!!errors.tenantId}
               aria-describedby={errors.tenantId ? 'tenantId-error' : undefined}
@@ -102,7 +112,12 @@ export default function LoginPage() {
               id="email"
               type="email"
               autoComplete="email"
-              {...register('email')}
+              {...emailReg}
+              onFocus={() => clearErrors('email')}
+              onChange={(e) => {
+                clearErrors('email');
+                emailReg.onChange(e);
+              }}
               className="form-input"
               placeholder="you@example.com"
               aria-invalid={!!errors.email}
@@ -120,7 +135,12 @@ export default function LoginPage() {
               id="password"
               type="password"
               autoComplete="current-password"
-              {...register('password')}
+              {...passwordReg}
+              onFocus={() => clearErrors('password')}
+              onChange={(e) => {
+                clearErrors('password');
+                passwordReg.onChange(e);
+              }}
               className="form-input"
               aria-invalid={!!errors.password}
               aria-describedby={errors.password ? 'password-error' : undefined}

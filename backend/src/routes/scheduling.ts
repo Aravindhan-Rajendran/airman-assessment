@@ -138,7 +138,7 @@ router.post(
           tenantId,
           studentId: req.context!.userId,
           status: 'REQUESTED',
-          name,
+          name: body.name,
           requestedAt,
           startAt,
           endAt,

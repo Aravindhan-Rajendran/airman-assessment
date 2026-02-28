@@ -40,7 +40,7 @@ export default function DashboardPage() {
             </Link>
             <Link href="/dashboard/schedule" className="card" style={{ padding: '1rem', minWidth: 180, textDecoration: 'none' }}>
               <strong>Schedule</strong>
-              <p style={{ margin: '0.5rem 0 0', fontSize: '0.9rem', opacity: 0.9 }}>Add availability, view bookings.</p>
+              <p style={{ margin: '0.5rem 0 0', fontSize: '0.9rem', opacity: 0.9 }}>{isAdmin ? 'View all bookings and weekly schedule.' : 'Add availability, view bookings.'}</p>
             </Link>
             {(isAdmin) && (
               <Link href="/dashboard/admin" className="card" style={{ padding: '1rem', minWidth: 180, textDecoration: 'none' }}>

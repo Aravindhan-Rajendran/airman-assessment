@@ -16,6 +16,12 @@ import { TimezoneDropdown } from '@/components/TimezoneDropdown';
 
 const LIMIT = 10;
 
+/** Format Date for datetime-local min attribute (no past dates/times). */
+function toDatetimeLocalMin(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function SchedulePage() {
   const { user } = useRequireAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -30,6 +36,7 @@ export default function SchedulePage() {
   const [weekly, setWeekly] = useState<Booking[]>([]);
   const [timezone, setTimezone] = useState('UTC');
   const [submitting, setSubmitting] = useState(false);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   useEffect(() => {
     setTimezone(getUserTimezone());
@@ -37,10 +44,11 @@ export default function SchedulePage() {
 
   const displayTz = timezone;
   const displayTzLabel = useMemo(() => getTimezoneShortLabel(displayTz), [displayTz]);
+  const minDatetime = toDatetimeLocalMin(new Date());
 
   const bookingForm = useForm<BookingRequestFormData>({
     resolver: zodResolver(bookingRequestSchema),
-    defaultValues: { requestedAt: '', startAt: '', endAt: '' },
+    defaultValues: { name: '', requestedAt: '', startAt: '', endAt: '' },
     mode: 'onBlur',
   });
 
@@ -50,16 +58,24 @@ export default function SchedulePage() {
     mode: 'onBlur',
   });
 
-  const loadBookings = () => {
+  const loadBookings = (pageOverride?: number) => {
+    const pageToLoad = pageOverride ?? page;
     setError(null);
-    schedulingApi.listBookings({ page, limit: LIMIT })
+    schedulingApi.listBookings({ page: pageToLoad, limit: LIMIT })
       .then((r) => {
         setBookings(Array.isArray(r.data) ? r.data : []);
         setTotal(r.total ?? 0);
+        if (pageOverride != null) setPage(pageOverride);
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Failed to load schedule');
       });
+  };
+
+  const refetchWeekly = () => {
+    schedulingApi.weeklyBookings(weekStart)
+      .then((r) => setWeekly(Array.isArray(r.data) ? r.data : []))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load weekly view'));
   };
 
   useEffect(() => { loadBookings(); }, [page]);
@@ -71,18 +87,71 @@ export default function SchedulePage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load weekly view'));
   }, [weekStart]);
 
+  const isInstructorOrAdmin = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+
+  // When instructor/admin: refetch all bookings and weekly view on tab focus so student updates appear
+  useEffect(() => {
+    if (!isInstructorOrAdmin) return;
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadBookings();
+        refetchWeekly();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [isInstructorOrAdmin]);
+
+  // When instructor/admin: poll so new/updated student bookings show without refresh
+  useEffect(() => {
+    if (!isInstructorOrAdmin) return;
+    const POLL_MS = 15000;
+    const id = setInterval(() => {
+      loadBookings();
+      refetchWeekly();
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [isInstructorOrAdmin]);
+
   const onRequestBooking = bookingForm.handleSubmit(async (data) => {
     setSubmitting(true);
     setError(null);
     try {
-      await schedulingApi.createBooking(
+      const created = await schedulingApi.createBooking(
+        data.name.trim(),
         new Date(data.requestedAt).toISOString(),
         new Date(data.startAt).toISOString(),
         new Date(data.endAt).toISOString()
       );
       bookingForm.reset();
-      loadBookings();
-      schedulingApi.weeklyBookings(weekStart).then((r) => setWeekly(Array.isArray(r.data) ? r.data : []));
+      // Optimistic update: show new slot immediately in All bookings and Weekly view
+      const newBooking: Booking = {
+        id: created.id,
+        name: created.name ?? data.name.trim(),
+        startAt: created.startAt ?? data.startAt,
+        endAt: created.endAt ?? data.endAt,
+        status: created.status ?? 'REQUESTED',
+      };
+      setBookings((prev) => [newBooking, ...prev]);
+      setTotal((t) => t + 1);
+      const weekStartDate = new Date(weekStart);
+      const weekEnd = new Date(weekStartDate);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const start = new Date(newBooking.startAt ?? data.startAt);
+      if (start >= weekStartDate && start < weekEnd) {
+        setWeekly((prev) =>
+          [newBooking, ...prev].sort(
+            (a, b) => new Date(a.startAt ?? 0).getTime() - new Date(b.startAt ?? 0).getTime()
+          )
+        );
+      }
+      // Switch to page 1 so the new booking is visible; refetch when already on page 1
+      if (page === 1) {
+        loadBookings(1);
+      } else {
+        setPage(1);
+      }
+      refetchWeekly();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to request booking');
     } finally {
@@ -107,8 +176,25 @@ export default function SchedulePage() {
   });
 
   const isStudent = user?.role === 'STUDENT';
-  const isInstructorOrAdmin = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+  const isInstructor = user?.role === 'INSTRUCTOR';
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  const canAcceptBooking = (b: Booking) =>
+    (b.status === 'REQUESTED' || b.status === 'APPROVED') && !b.instructorId;
+
+  const onAcceptBooking = async (bookingId: string) => {
+    setAcceptingId(bookingId);
+    setError(null);
+    try {
+      await schedulingApi.acceptBooking(bookingId);
+      loadBookings();
+      refetchWeekly();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to accept booking');
+    } finally {
+      setAcceptingId(null);
+    }
+  };
 
   return (
     <div className="schedule-page">
@@ -139,11 +225,32 @@ export default function SchedulePage() {
             Choose when you want a training slot. Your school will approve or assign an instructor.
           </p>
           <form onSubmit={onRequestBooking} className="schedule-form" noValidate>
+            <div className={`schedule-form__field ${bookingForm.formState.errors.name ? 'form-field--error' : ''}`}>
+              <label htmlFor="name">Booking name <span className="form-required">*</span></label>
+              <input
+                id="name"
+                type="text"
+                placeholder="e.g. Instrument training"
+                {...bookingForm.register('name')}
+                className="schedule-form__input"
+                aria-invalid={!!bookingForm.formState.errors.name}
+                aria-describedby={bookingForm.formState.errors.name ? 'name-error' : 'name-hint'}
+              />
+              {bookingForm.formState.errors.name && (
+                <span id="name-error" className="form-field__error" role="alert">
+                  {bookingForm.formState.errors.name.message}
+                </span>
+              )}
+              {!bookingForm.formState.errors.name && (
+                <span id="name-hint" className="schedule-form__hint">Helps you tell this booking apart from others</span>
+              )}
+            </div>
             <div className={`schedule-form__field ${bookingForm.formState.errors.requestedAt ? 'form-field--error' : ''}`}>
               <label htmlFor="requestedAt">When you are requesting (date & time) <span className="form-required">*</span></label>
               <input
                 id="requestedAt"
                 type="datetime-local"
+                min={minDatetime}
                 {...bookingForm.register('requestedAt')}
                 className="schedule-form__input"
                 aria-invalid={!!bookingForm.formState.errors.requestedAt}
@@ -163,6 +270,7 @@ export default function SchedulePage() {
               <input
                 id="startAt"
                 type="datetime-local"
+                min={minDatetime}
                 {...bookingForm.register('startAt')}
                 className="schedule-form__input"
                 aria-invalid={!!bookingForm.formState.errors.startAt}
@@ -203,7 +311,7 @@ export default function SchedulePage() {
         </section>
       )}
 
-      {isInstructorOrAdmin && (
+      {user?.role === 'INSTRUCTOR' && (
         <section className="card schedule-card" aria-labelledby="add-availability-title">
           <h2 id="add-availability-title" className="schedule-card__title">Add availability</h2>
           <p className="schedule-card__description">Set when you are available for bookings.</p>
@@ -213,6 +321,7 @@ export default function SchedulePage() {
               <input
                 id="availStart"
                 type="datetime-local"
+                min={minDatetime}
                 {...availabilityForm.register('startAt')}
                 className="schedule-form__input"
                 aria-invalid={!!availabilityForm.formState.errors.startAt}
@@ -229,6 +338,7 @@ export default function SchedulePage() {
               <input
                 id="availEnd"
                 type="datetime-local"
+                min={minDatetime}
                 {...availabilityForm.register('endAt')}
                 className="schedule-form__input"
                 aria-invalid={!!availabilityForm.formState.errors.endAt}
@@ -266,19 +376,37 @@ export default function SchedulePage() {
             <table className="schedule-table" aria-label="Bookings for the selected week">
               <thead>
                 <tr>
+                  <th scope="col">Name</th>
                   <th scope="col">Start – End</th>
                   <th scope="col">Status</th>
+                  {isInstructor && <th scope="col">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {weekly.map((b) => (
                   <tr key={b.id}>
+                    <td>{b.name ?? '—'}</td>
                     <td className="schedule-table__range">{formatBookingRange(b.startAt, b.endAt, displayTz)}</td>
                     <td>
                       <span className={`schedule-list__status schedule-list__status--${(b.status ?? '').toLowerCase()}`}>
                         {b.status}
                       </span>
                     </td>
+                    {isInstructor && (
+                      <td>
+                        {canAcceptBooking(b) && (
+                          <button
+                            type="button"
+                            className="schedule-form__submit"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.875rem' }}
+                            disabled={acceptingId === b.id}
+                            onClick={() => b.id && onAcceptBooking(b.id)}
+                          >
+                            {acceptingId === b.id ? 'Accepting…' : 'Assign to me'}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -297,13 +425,16 @@ export default function SchedulePage() {
             <table className="schedule-table" aria-label="All your bookings">
               <thead>
                 <tr>
+                  <th scope="col">Name</th>
                   <th scope="col">Start</th>
                   <th scope="col">Status</th>
+                  {isInstructor && <th scope="col">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {bookings.map((b) => (
                   <tr key={b.id}>
+                    <td>{b.name ?? '—'}</td>
                     <td className="schedule-table__range">
                       {b.startAt ? formatInLocal(b.startAt, { showTz: true, timeZone: displayTz }) : '—'}
                     </td>
@@ -312,6 +443,21 @@ export default function SchedulePage() {
                         {b.status}
                       </span>
                     </td>
+                    {isInstructor && (
+                      <td>
+                        {canAcceptBooking(b) && (
+                          <button
+                            type="button"
+                            className="schedule-form__submit"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.875rem' }}
+                            disabled={acceptingId === b.id}
+                            onClick={() => b.id && onAcceptBooking(b.id)}
+                          >
+                            {acceptingId === b.id ? 'Accepting…' : 'Assign to me'}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

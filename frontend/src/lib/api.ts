@@ -171,6 +171,8 @@ export const authApi = {
       body: JSON.stringify({ userId, approved }),
     }),
   listPendingStudents: () => api<{ data: { id: string; email: string; createdAt: string }[] }>('/api/auth/students-pending'),
+  listStudents: () =>
+    api<{ data: { id: string; email: string; approved: boolean; createdAt: string }[] }>('/api/auth/students'),
   logout: (refreshToken: string) =>
     fetchWithRetryAndTimeout(`${API_BASE}/api/auth/logout`, {
       method: 'POST',
@@ -238,6 +240,7 @@ export const coursesApi = {
 // Shared type for scheduling (must match backend booking response)
 export type Booking = {
   id?: string;
+  name?: string | null;
   startAt?: string;
   endAt?: string;
   status?: string;
@@ -274,10 +277,10 @@ export const schedulingApi = {
   },
   weeklyBookings: (weekStart: string) =>
     api<{ data: Booking[] }>(`/api/scheduling/bookings/weekly?weekStart=${weekStart}`),
-  createBooking: (requestedAt: string, startAt: string, endAt: string) =>
-    api<unknown>('/api/scheduling/bookings', {
+  createBooking: (name: string, requestedAt: string, startAt: string, endAt: string) =>
+    api<Booking>('/api/scheduling/bookings', {
       method: 'POST',
-      body: JSON.stringify({ requestedAt, startAt, endAt }),
+      body: JSON.stringify({ name, requestedAt, startAt, endAt }),
     }),
   approveBooking: (id: string) => api<unknown>(`/api/scheduling/bookings/${id}/approve`, { method: 'PATCH' }),
   assignBooking: (id: string, instructorId: string) =>
@@ -285,6 +288,8 @@ export const schedulingApi = {
       method: 'PATCH',
       body: JSON.stringify({ instructorId }),
     }),
+  acceptBooking: (id: string) =>
+    api<Booking>(`/api/scheduling/bookings/${id}/accept`, { method: 'PATCH' }),
   completeBooking: (id: string) => api<unknown>(`/api/scheduling/bookings/${id}/complete`, { method: 'PATCH' }),
   cancelBooking: (id: string) => api<unknown>(`/api/scheduling/bookings/${id}/cancel`, { method: 'PATCH' }),
   addAvailability: (startAt: string, endAt: string, instructorId?: string) =>
