@@ -7,6 +7,7 @@ type Permission =
   | 'admin:approve_student'
   | 'instructor:create_content'
   | 'instructor:assign_quizzes'
+  | 'instructor:accept_booking'
   | 'student:view_content'
   | 'student:attempt_quizzes'
   | 'student:request_booking'
@@ -35,6 +36,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     'instructor:create_content',
     'instructor:assign_quizzes',
     'instructor:manage_availability',
+    'instructor:accept_booking',
     'student:view_content',
     'student:attempt_quizzes',
     'view_own_tenant',

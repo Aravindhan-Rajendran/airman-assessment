@@ -159,6 +159,7 @@ model Booking {
   tenantId     String
   studentId    String
   instructorId String?
+  name         String?
   status       BookingStatus @default(REQUESTED)
   requestedAt  DateTime
   startAt      DateTime

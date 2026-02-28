@@ -6,7 +6,7 @@ import { requirePermission, requireApprovedStudent } from '../middleware/rbac';
 import { requireTenant } from '../middleware/tenant';
 import { AppError } from '../middleware/errorHandler';
 import { auditService } from '../services/auditService';
-import { assertNoInstructorConflict } from '../services/bookingService';
+import { assertNoInstructorConflict, instructorHasAvailability } from '../services/bookingService';
 import { cacheService } from '../services/cacheService';
 
 const router = Router();
@@ -23,6 +23,7 @@ const availabilitySchema = z.object({
 });
 
 const bookingSchema = z.object({
+  name: z.string().min(1, 'Booking name is required').max(200),
   requestedAt: z.string().datetime(),
   startAt: z.string().datetime(),
   endAt: z.string().datetime(),
@@ -128,11 +129,16 @@ router.post(
         next(new AppError(400, 'endAt must be after startAt', 'VALIDATION_ERROR'));
         return;
       }
+      if (startAt < requestedAt) {
+        next(new AppError(400, 'Preferred start cannot be before the request time', 'VALIDATION_ERROR'));
+        return;
+      }
       const booking = await prisma.booking.create({
         data: {
           tenantId,
           studentId: req.context!.userId,
           status: 'REQUESTED',
+          name,
           requestedAt,
           startAt,
           endAt,
@@ -223,6 +229,58 @@ router.patch(
         resourceId: booking.id,
         beforeState: before,
         afterState: JSON.stringify({ status: 'ASSIGNED', instructorId: body.instructorId }),
+        correlationId: req.headers['x-correlation-id'] as string,
+      });
+      res.json(updated);
+    } catch (e) {
+      if (e instanceof z.ZodError)
+        next(new AppError(400, e.errors.map((x) => x.message).join(', '), 'VALIDATION_ERROR'));
+      else next(e);
+    }
+  }
+);
+
+router.patch(
+  '/bookings/:id/accept',
+  authMiddleware,
+  requireAuth,
+  requirePermission('instructor:accept_booking'),
+  requireTenant,
+  async (req, res, next) => {
+    try {
+      const tenantId = getTenantId(req);
+      const instructorId = req.context!.userId;
+      const booking = await prisma.booking.findFirst({
+        where: { id: req.params.id, tenantId },
+      });
+      if (!booking) return next(new AppError(404, 'Booking not found', 'NOT_FOUND'));
+      if (booking.status === 'CANCELLED') {
+        next(new AppError(400, 'Cannot accept a cancelled booking', 'VALIDATION_ERROR'));
+        return;
+      }
+      if (booking.instructorId) {
+        next(new AppError(400, 'Booking already has an instructor assigned', 'VALIDATION_ERROR'));
+        return;
+      }
+      const hasAvail = await instructorHasAvailability(tenantId, instructorId, booking.startAt, booking.endAt);
+      if (!hasAvail) {
+        next(new AppError(400, 'You do not have availability for this time slot. Add availability first.', 'NO_AVAILABILITY'));
+        return;
+      }
+      await assertNoInstructorConflict(tenantId, instructorId, booking.startAt, booking.endAt, booking.id);
+      const before = JSON.stringify({ status: booking.status, instructorId: booking.instructorId });
+      const updated = await prisma.booking.update({
+        where: { id: booking.id },
+        data: { instructorId, status: 'ASSIGNED', assignedAt: new Date() },
+      });
+      await auditService.log({
+        userId: req.context!.userId,
+        tenantId,
+        action: 'ACCEPT',
+        resource: 'SCHEDULE',
+        resourceId: booking.id,
+        beforeState: before,
+        afterState: JSON.stringify({ status: 'ASSIGNED', instructorId }),
         correlationId: req.headers['x-correlation-id'] as string,
       });
       res.json(updated);

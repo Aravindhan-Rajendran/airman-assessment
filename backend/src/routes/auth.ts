@@ -181,6 +181,27 @@ router.get(
   }
 );
 
+router.get(
+  '/students',
+  authMiddleware,
+  requireAuth,
+  requirePermission('admin:approve_student'),
+  requireTenant,
+  async (req, res, next) => {
+    try {
+      const tenantId = req.context!.tenantId!;
+      const users = await prisma.user.findMany({
+        where: { tenantId, role: 'STUDENT' },
+        select: { id: true, email: true, approved: true, createdAt: true },
+        orderBy: { email: 'asc' },
+      });
+      res.json({ data: users });
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
 router.get('/me', authMiddleware, requireAuth, (req, res) => {
   res.json({
     id: req.context!.userId,

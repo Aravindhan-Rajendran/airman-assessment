@@ -34,3 +34,21 @@ export async function assertNoInstructorConflict(
     throw new AppError(409, 'Instructor is already booked for this time slot', 'BOOKING_CONFLICT');
   }
 }
+
+/** True if the instructor has at least one availability slot overlapping [startAt, endAt]. */
+export async function instructorHasAvailability(
+  tenantId: string,
+  instructorId: string,
+  startAt: Date,
+  endAt: Date
+): Promise<boolean> {
+  const slot = await prisma.instructorAvailability.findFirst({
+    where: {
+      tenantId,
+      instructorId,
+      startAt: { lt: endAt },
+      endAt: { gt: startAt },
+    },
+  });
+  return !!slot;
+}

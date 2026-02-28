@@ -219,6 +219,7 @@ async function main() {
         tenantId: schoolA.id,
         studentId: studentA.id,
         status: 'REQUESTED',
+        name: 'Sample training slot',
         requestedAt: new Date(),
         startAt: bookStart,
         endAt: bookEnd,
