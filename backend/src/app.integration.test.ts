@@ -242,7 +242,7 @@ describe('API Integration', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .send({
           name: 'Test booking 1',
-          requestedAt: new Date().toISOString(),
+          requestedAt: new Date('2025-06-01T09:00:00Z').toISOString(),
           startAt: new Date('2025-06-01T10:00:00Z').toISOString(),
           endAt: new Date('2025-06-01T11:00:00Z').toISOString(),
         })
@@ -265,7 +265,7 @@ describe('API Integration', () => {
         .set('Authorization', `Bearer ${studentToken}`)
         .send({
           name: 'Test booking 2',
-          requestedAt: new Date().toISOString(),
+          requestedAt: new Date('2025-06-01T09:00:00Z').toISOString(),
           startAt: new Date('2025-06-01T10:30:00Z').toISOString(),
           endAt: new Date('2025-06-01T11:30:00Z').toISOString(),
         })
