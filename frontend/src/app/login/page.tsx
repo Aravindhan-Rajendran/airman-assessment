@@ -7,10 +7,14 @@ import { useAuth } from '@/context/AuthContext';
 import { getPublicTenants } from '@/lib/api';
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 
+const TENANTS_LOAD_SLOW_MESSAGE_AFTER_MS = 5000;
+
 export default function LoginPage() {
   const { login, user } = useAuth();
   const [tenants, setTenants] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(true);
   const [tenantsError, setTenantsError] = useState('');
+  const [tenantsSlowHint, setTenantsSlowHint] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -29,13 +33,24 @@ export default function LoginPage() {
 
   const loadTenants = () => {
     setTenantsError('');
+    setTenantsSlowHint(false);
+    setTenantsLoading(true);
+    const slowHintTimer = window.setTimeout(() => setTenantsSlowHint(true), TENANTS_LOAD_SLOW_MESSAGE_AFTER_MS);
     getPublicTenants()
-      .then(setTenants)
-      .catch(() =>
+      .then((list) => {
+        clearTimeout(slowHintTimer);
+        setTenants(list);
+      })
+      .catch(() => {
+        clearTimeout(slowHintTimer);
         setTenantsError(
           'Could not load schools. The server may be starting—please try again in a moment.'
-        )
-      );
+        );
+      })
+      .finally(() => {
+        clearTimeout(slowHintTimer);
+        setTenantsLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -116,6 +131,19 @@ export default function LoginPage() {
               </span>
             )}
           </div>
+          {tenantsLoading && tenantsSlowHint && !tenantsError && (
+            <div className="form-message" role="status" style={{ marginBottom: 8 }}>
+              Still loading schools… The server may be waking up. You can wait or{' '}
+              <button
+                type="button"
+                onClick={loadTenants}
+                style={{ textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 'inherit', padding: 0 }}
+              >
+                retry
+              </button>
+              .
+            </div>
+          )}
           {tenantsError && (
             <div className="form-message form-message--error" role="alert">
               {tenantsError}
