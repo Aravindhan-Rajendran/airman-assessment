@@ -72,9 +72,8 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use(errorHandler);
 
-let server: ReturnType<typeof app.listen> | null = null;
 if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(config.port, () => {
+  app.listen(config.port, () => {
     console.log(`Server listening on port ${config.port}`);
   });
 }

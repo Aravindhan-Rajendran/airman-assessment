@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authService } from '../services/authService';
 import { authMiddleware, requireAuth } from '../middleware/auth';
-import { requirePermission, requireRole } from '../middleware/rbac';
+import { requirePermission } from '../middleware/rbac';
 import { requireTenant } from '../middleware/tenant';
 import { AppError } from '../middleware/errorHandler';
 import { prisma } from '../db';

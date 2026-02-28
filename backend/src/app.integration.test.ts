@@ -35,10 +35,8 @@ describe('Global rate limiter', () => {
 describe('API Integration', () => {
   let adminId: string;
   let instructorId: string;
-  let studentId: string;
   let courseId: string;
   let moduleId: string;
-  let lessonId: string;
 
   beforeAll(async () => {
     await prisma.auditLog.deleteMany({}).catch(() => {});
@@ -62,6 +60,7 @@ describe('API Integration', () => {
 
     const pw = await hashPassword('Test123!');
     const pwAdmin = await hashPassword('Admin123!');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- student created for DB state
     const [admin, instructor, student] = await Promise.all([
       prisma.user.create({
         data: {
@@ -102,7 +101,6 @@ describe('API Integration', () => {
     });
     adminId = admin.id;
     instructorId = instructor.id;
-    studentId = student.id;
 
     const course = await prisma.course.create({
       data: {
@@ -116,6 +114,7 @@ describe('API Integration', () => {
       data: { courseId, title: 'Module 1', order: 0 },
     });
     moduleId = mod.id;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- lesson created for DB state
     const lesson = await prisma.lesson.create({
       data: {
         moduleId,
@@ -127,7 +126,6 @@ describe('API Integration', () => {
         order: 0,
       },
     });
-    lessonId = lesson.id;
   });
 
   afterAll(async () => {

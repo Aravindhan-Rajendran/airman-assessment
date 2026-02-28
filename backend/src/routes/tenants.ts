@@ -1,4 +1,4 @@
-import { Router, Request } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { authMiddleware, requireAuth } from '../middleware/auth';
@@ -11,10 +11,6 @@ const createTenantSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/),
 });
-
-function getTenantId(req: Request): string | null {
-  return req.context?.tenantId ?? null;
-}
 
 router.get('/public', async (_req, res, next) => {
   try {

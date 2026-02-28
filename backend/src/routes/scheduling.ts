@@ -68,7 +68,7 @@ router.post(
       const slot = await prisma.instructorAvailability.create({
         data: {
           tenantId,
-          instructorId: req.context!.role === 'INSTRUCTOR' ? req.context!.userId : body.instructorId!,
+          instructorId,
           startAt,
           endAt,
         },
