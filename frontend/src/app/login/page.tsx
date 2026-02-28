@@ -1,32 +1,18 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '@/context/AuthContext';
-import { fetchPublicTenants } from '@/lib/api';
+import { getPublicTenants } from '@/lib/api';
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
   const [tenants, setTenants] = useState<{ id: string; name: string; slug: string }[]>([]);
-  const [tenantsLoading, setTenantsLoading] = useState(true);
   const [tenantsError, setTenantsError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const loadSchools = async () => {
-    setTenantsError('');
-    setTenantsLoading(true);
-    try {
-      const list = await fetchPublicTenants();
-      setTenants(list);
-    } catch {
-      setTenantsError('Could not load schools. The server may be starting—click Retry.');
-    } finally {
-      setTenantsLoading(false);
-    }
-  };
 
   const {
     register,
@@ -41,9 +27,20 @@ export default function LoginPage() {
 
   const tenantId = watch('tenantId');
 
+  const loadTenants = () => {
+    setTenantsError('');
+    getPublicTenants()
+      .then(setTenants)
+      .catch(() =>
+        setTenantsError(
+          'Could not load schools. The server may be starting—please try again in a moment.'
+        )
+      );
+  };
+
   useEffect(() => {
-    loadSchools();
-  }, [loadSchools]);
+    loadTenants();
+  }, []);
 
   const onSubmit = handleSubmit(async (data) => {
     setSubmitError('');
@@ -70,14 +67,10 @@ export default function LoginPage() {
               id="tenantId"
               {...register('tenantId')}
               className="form-input"
-              disabled={tenantsLoading}
               aria-invalid={!!errors.tenantId}
               aria-describedby={errors.tenantId ? 'tenantId-error' : undefined}
-              aria-busy={tenantsLoading}
             >
-              <option value="">
-                {tenantsLoading ? 'Loading schools…' : '— Select your school —'}
-              </option>
+              <option value="">— Select your school —</option>
               {tenants.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
@@ -128,9 +121,9 @@ export default function LoginPage() {
               {tenantsError}
               <button
                 type="button"
-                onClick={loadSchools}
-                disabled={tenantsLoading}
-                className="form-retry"
+                onClick={loadTenants}
+                className="form-message__retry"
+                style={{ marginLeft: 8, textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 'inherit' }}
               >
                 Retry
               </button>
@@ -141,7 +134,7 @@ export default function LoginPage() {
               {submitError}
             </div>
           )}
-          <button type="submit" disabled={loading || tenantsLoading || !tenantId} className="form-submit">
+          <button type="submit" disabled={loading || !tenantId} className="form-submit">
             {loading ? 'Signing in…' : 'Login'}
           </button>
         </form>

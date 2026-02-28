@@ -1,24 +1,45 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const LOGIN_PATH = '/login';
 
-/** Request timeout in ms (handles cold starts on free-tier backends). */
+/** Timeout for each attempt (handles cold start / slow backend). */
 const FETCH_TIMEOUT_MS = 25000;
+/** Retries on network error, timeout, or 5xx. */
+const FETCH_RETRIES = 3;
+const FETCH_RETRY_DELAY_MS = 2000;
 
-async function fetchWithTimeout(
+/**
+ * Fetch with timeout and retry. Retries on network failure, timeout, or 5xx.
+ * Permanent fix for intermittent failures (e.g. backend cold start).
+ */
+async function fetchWithRetryAndTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs: number = FETCH_TIMEOUT_MS
+  attempt = 1
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      ...options,
-      signal: options.signal ?? controller.signal,
-    });
-    return res;
-  } finally {
+    const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
+    const shouldRetry =
+      attempt < FETCH_RETRIES &&
+      (res.status >= 500 || res.status === 408 || res.status === 429);
+    if (shouldRetry) {
+      await new Promise((r) => setTimeout(r, FETCH_RETRY_DELAY_MS));
+      return fetchWithRetryAndTimeout(url, options, attempt + 1);
+    }
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const isRetryable =
+      attempt < FETCH_RETRIES &&
+      (err instanceof Error &&
+        (err.name === 'AbortError' || err.message?.includes('fetch') || err.message?.includes('network')));
+    if (isRetryable) {
+      await new Promise((r) => setTimeout(r, FETCH_RETRY_DELAY_MS));
+      return fetchWithRetryAndTimeout(url, options, attempt + 1);
+    }
+    throw err;
   }
 }
 
@@ -58,7 +79,7 @@ function redirectToLogin(): void {
 async function doRefresh(): Promise<{ accessToken: string; refreshToken: string }> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) throw new Error('No refresh token');
-  const res = await fetchWithTimeout(`${API_BASE}/api/auth/refresh`, {
+  const res = await fetchWithRetryAndTimeout(`${API_BASE}/api/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
@@ -115,15 +136,7 @@ export async function api<T>(
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  let res: Response;
-  try {
-    res = await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers });
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new ApiError('Request timed out. Please try again.', 408, 'TIMEOUT');
-    }
-    throw err;
-  }
+  const res = await fetchWithRetryAndTimeout(`${API_BASE}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   const requestId = res.headers.get('x-request-id') ?? undefined;
 
@@ -159,38 +172,25 @@ export const authApi = {
     }),
   listPendingStudents: () => api<{ data: { id: string; email: string; createdAt: string }[] }>('/api/auth/students-pending'),
   logout: (refreshToken: string) =>
-    fetch(`${API_BASE}/api/auth/logout`, {
+    fetchWithRetryAndTimeout(`${API_BASE}/api/auth/logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
     }),
 };
 
+/** Load public tenants (schools) with retry + timeout. Use on login page before auth. */
+export async function getPublicTenants(): Promise<{ id: string; name: string; slug: string }[]> {
+  const res = await fetchWithRetryAndTimeout(`${API_BASE}/api/tenants/public`);
+  if (!res.ok) throw new Error(`Backend returned ${res.status}`);
+  const json = await res.json().catch(() => ({}));
+  const data = json.data ?? [];
+  return Array.isArray(data) ? data : [];
+}
+
 export const tenantsApi = {
   list: () => api<{ data: { id: string; name: string; slug: string }[] }>('/api/tenants'),
 };
-
-/** Fetch public tenants (schools) with timeout and retries for unreliable backends. */
-export async function fetchPublicTenants(): Promise<{ id: string; name: string; slug: string }[]> {
-  const timeoutMs = 20000;
-  const maxRetries = 3;
-  const delayMs = 1200;
-  let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await fetchWithTimeout(`${API_BASE}/api/tenants/public`, {}, timeoutMs);
-      if (!res.ok) throw new Error(`Backend returned ${res.status}`);
-      const data = await res.json().catch(() => ({}));
-      return Array.isArray(data?.data) ? data.data : [];
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, delayMs));
-      }
-    }
-  }
-  throw lastError ?? new Error('Could not load schools');
-}
 
 export type Instructor = { id: string; email: string };
 
