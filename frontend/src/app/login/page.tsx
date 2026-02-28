@@ -1,18 +1,32 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '@/context/AuthContext';
-import { API_BASE } from '@/lib/api';
+import { fetchPublicTenants } from '@/lib/api';
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
   const [tenants, setTenants] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(true);
   const [tenantsError, setTenantsError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const loadSchools = async () => {
+    setTenantsError('');
+    setTenantsLoading(true);
+    try {
+      const list = await fetchPublicTenants();
+      setTenants(list);
+    } catch {
+      setTenantsError('Could not load schools. The server may be starting—click Retry.');
+    } finally {
+      setTenantsLoading(false);
+    }
+  };
 
   const {
     register,
@@ -28,15 +42,8 @@ export default function LoginPage() {
   const tenantId = watch('tenantId');
 
   useEffect(() => {
-    setTenantsError('');
-    fetch(`${API_BASE}/api/tenants/public`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Backend returned ${r.status}`);
-        return r.json();
-      })
-      .then((r: { data?: { id: string; name: string; slug: string }[] }) => setTenants(r.data || []))
-      .catch(() => setTenantsError('Could not load schools. Check that the backend is running and CORS is configured.'));
-  }, []);
+    loadSchools();
+  }, [loadSchools]);
 
   const onSubmit = handleSubmit(async (data) => {
     setSubmitError('');
@@ -63,10 +70,14 @@ export default function LoginPage() {
               id="tenantId"
               {...register('tenantId')}
               className="form-input"
+              disabled={tenantsLoading}
               aria-invalid={!!errors.tenantId}
               aria-describedby={errors.tenantId ? 'tenantId-error' : undefined}
+              aria-busy={tenantsLoading}
             >
-              <option value="">— Select your school —</option>
+              <option value="">
+                {tenantsLoading ? 'Loading schools…' : '— Select your school —'}
+              </option>
               {tenants.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
@@ -115,6 +126,14 @@ export default function LoginPage() {
           {tenantsError && (
             <div className="form-message form-message--error" role="alert">
               {tenantsError}
+              <button
+                type="button"
+                onClick={loadSchools}
+                disabled={tenantsLoading}
+                className="form-retry"
+              >
+                Retry
+              </button>
             </div>
           )}
           {submitError && (
@@ -122,7 +141,7 @@ export default function LoginPage() {
               {submitError}
             </div>
           )}
-          <button type="submit" disabled={loading || !tenantId} className="form-submit">
+          <button type="submit" disabled={loading || tenantsLoading || !tenantId} className="form-submit">
             {loading ? 'Signing in…' : 'Login'}
           </button>
         </form>
