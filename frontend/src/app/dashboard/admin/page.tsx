@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRequireAuth } from '@/context/AuthContext';
-import { authApi, schedulingApi, instructorsApi, auditApi, type Booking, type AuditLogEntry } from '@/lib/api';
+import { authApi, schedulingApi, instructorsApi, auditApi, type Booking, type AuditLogEntry, type InstructorAvailability } from '@/lib/api';
+import { getUserTimezone, getTimezoneShortLabel, formatBookingRange } from '@/lib/timezone';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
@@ -26,6 +27,25 @@ export default function AdminPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditPage, setAuditPage] = useState(1);
   const [auditTotal, setAuditTotal] = useState(0);
+  const [availability, setAvailability] = useState<InstructorAvailability[]>([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [displayTz, setDisplayTz] = useState('UTC');
+
+  useEffect(() => {
+    setDisplayTz(getUserTimezone());
+  }, []);
+
+  const loadAvailability = useCallback(() => {
+    if (user?.role !== 'ADMIN') return;
+    setAvailabilityLoading(true);
+    setAvailabilityError(null);
+    schedulingApi
+      .listAvailability({ page: 1, limit: 500 })
+      .then((r) => setAvailability(Array.isArray(r.data) ? r.data : []))
+      .catch((err) => setAvailabilityError(err instanceof Error ? err.message : 'Failed to load availability'))
+      .finally(() => setAvailabilityLoading(false));
+  }, [user?.role]);
 
   const loadBookings = useCallback(() => {
     if (user?.role !== 'ADMIN') return;
@@ -44,7 +64,8 @@ export default function AdminPage() {
     authApi.listStudents().then((r) => setStudents(r.data)).catch(() => setStudents([]));
     instructorsApi.list().then((r) => setInstructors(r.data)).catch(() => setInstructors([]));
     loadBookings();
-  }, [user?.role, loadBookings]);
+    loadAvailability();
+  }, [user?.role, loadBookings, loadAvailability]);
 
   useEffect(() => {
     if (user?.role !== 'ADMIN') return;
@@ -207,6 +228,44 @@ export default function AdminPage() {
             </form>
           </section>
           <section className="card" style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{ marginTop: 0 }}>All instructor availability</h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--color-muted-soft)', marginBottom: 12 }}>
+              When each instructor is available (times in {getTimezoneShortLabel(displayTz)}).
+            </p>
+            {availabilityError && (
+              <div className="form-message form-message--error" role="alert" style={{ marginBottom: 12 }}>
+                {availabilityError}
+                <button type="button" onClick={loadAvailability} style={{ marginLeft: 8 }}>Retry</button>
+              </div>
+            )}
+            {availabilityLoading ? (
+              <p aria-busy="true">Loading availability…</p>
+            ) : availability.length === 0 ? (
+              <p>No availability slots. Instructors add availability from their Schedule page.</p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="schedule-table" style={{ width: '100%', minWidth: 400 }} aria-label="All instructor availability">
+                  <thead>
+                    <tr>
+                      <th scope="col">Instructor</th>
+                      <th scope="col">Start – End</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {availability.map((slot) => (
+                      <tr key={slot.id}>
+                        <td>{slot.instructor?.email ?? slot.instructorId}</td>
+                        <td className="schedule-table__range">
+                          {formatBookingRange(slot.startAt, slot.endAt, displayTz)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+          <section className="card" style={{ marginBottom: '1.5rem' }}>
             <h2 style={{ marginTop: 0 }}>Instructor list</h2>
             <p style={{ fontSize: '0.875rem', color: 'var(--color-muted-soft)', marginBottom: 12 }}>
               All instructors in your school. Use them when assigning bookings.
@@ -350,7 +409,11 @@ export default function AdminPage() {
                   }}
                 >
                   <div style={{ marginBottom: 6 }}>
-                    <strong>Booking {b.id}</strong> — {status(b)}
+                    <strong>Booking {b.id}</strong>
+                    {b.name && (
+                      <span style={{ marginLeft: 8, fontWeight: 500 }}>— {b.name}</span>
+                    )}
+                    {' '}— {status(b)}
                   </div>
                   <div style={{ fontSize: 14, color: '#555', marginBottom: 6 }}>
                     {b.startAt && new Date(b.startAt).toLocaleString()} –{' '}

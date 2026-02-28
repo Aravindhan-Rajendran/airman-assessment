@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRequireAuth } from '@/context/AuthContext';
-import { schedulingApi, type Booking } from '@/lib/api';
+import { schedulingApi, type Booking, type InstructorAvailability } from '@/lib/api';
 import {
   getUserTimezone,
   getTimezoneShortLabel,
@@ -34,6 +34,7 @@ export default function SchedulePage() {
     return d.toISOString().slice(0, 10);
   });
   const [weekly, setWeekly] = useState<Booking[]>([]);
+  const [availability, setAvailability] = useState<InstructorAvailability[]>([]);
   const [timezone, setTimezone] = useState('UTC');
   const [submitting, setSubmitting] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -80,14 +81,33 @@ export default function SchedulePage() {
 
   useEffect(() => { loadBookings(); }, [page]);
 
+  const isInstructor = user?.role === 'INSTRUCTOR';
+  const isInstructorOrAdmin = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+
+  // Weekly view: only fetch for admin and student (not instructor)
   useEffect(() => {
+    if (isInstructor) return;
     setError(null);
     schedulingApi.weeklyBookings(weekStart)
       .then((r) => setWeekly(Array.isArray(r.data) ? r.data : []))
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load weekly view'));
-  }, [weekStart]);
+  }, [weekStart, isInstructor]);
 
-  const isInstructorOrAdmin = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
+  // Instructor: load their availability slots
+  const loadAvailability = () => {
+    if (!isInstructor) return;
+    setError(null);
+    schedulingApi.listAvailability({ page: 1, limit: 100 })
+      .then((r) => {
+        const slots = Array.isArray(r.data) ? r.data : [];
+        setAvailability(slots.filter((s) => s.instructorId === user?.id));
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load availability'));
+  };
+
+  useEffect(() => {
+    if (isInstructor) loadAvailability();
+  }, [isInstructor, user?.id]);
 
   // When instructor/admin: refetch all bookings and weekly view on tab focus so student updates appear
   useEffect(() => {
@@ -95,12 +115,13 @@ export default function SchedulePage() {
     const onVisible = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         loadBookings();
-        refetchWeekly();
+        if (!isInstructor) refetchWeekly();
+        if (isInstructor) loadAvailability();
       }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [isInstructorOrAdmin]);
+  }, [isInstructorOrAdmin, isInstructor]);
 
   // When instructor/admin: poll so new/updated student bookings show without refresh
   useEffect(() => {
@@ -108,10 +129,11 @@ export default function SchedulePage() {
     const POLL_MS = 15000;
     const id = setInterval(() => {
       loadBookings();
-      refetchWeekly();
+      if (!isInstructor) refetchWeekly();
+      if (isInstructor) loadAvailability();
     }, POLL_MS);
     return () => clearInterval(id);
-  }, [isInstructorOrAdmin]);
+  }, [isInstructorOrAdmin, isInstructor]);
 
   const onRequestBooking = bookingForm.handleSubmit(async (data) => {
     setSubmitting(true);
@@ -151,7 +173,7 @@ export default function SchedulePage() {
       } else {
         setPage(1);
       }
-      refetchWeekly();
+      if (!isInstructor) refetchWeekly();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to request booking');
     } finally {
@@ -168,6 +190,7 @@ export default function SchedulePage() {
         new Date(data.endAt).toISOString()
       );
       availabilityForm.reset();
+      loadAvailability();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add availability');
     } finally {
@@ -176,7 +199,6 @@ export default function SchedulePage() {
   });
 
   const isStudent = user?.role === 'STUDENT';
-  const isInstructor = user?.role === 'INSTRUCTOR';
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   const canAcceptBooking = (b: Booking) =>
@@ -355,6 +377,36 @@ export default function SchedulePage() {
         </section>
       )}
 
+      {isInstructor && (
+        <section className="card schedule-card" aria-labelledby="your-availability-title">
+          <h2 id="your-availability-title" className="schedule-card__title">Your availability</h2>
+          <p className="schedule-card__description">Your current availability slots (times in {displayTzLabel}).</p>
+          <div className="schedule-table-wrap">
+            {availability.length === 0 ? (
+              <p className="schedule-table-empty">No availability slots yet. Add one above.</p>
+            ) : (
+              <table className="schedule-table" aria-label="Your availability slots">
+                <thead>
+                  <tr>
+                    <th scope="col">Start – End</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {availability.map((slot) => (
+                    <tr key={slot.id}>
+                      <td className="schedule-table__range">
+                        {formatBookingRange(slot.startAt, slot.endAt, displayTz)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      )}
+
+      {!isInstructor && (
       <section className="schedule-section" aria-labelledby="weekly-view-title">
         <h2 id="weekly-view-title" className="schedule-section__title">Weekly view</h2>
         <p className="schedule-section__hint">Week starting (times in {displayTzLabel}).</p>
@@ -379,7 +431,6 @@ export default function SchedulePage() {
                   <th scope="col">Name</th>
                   <th scope="col">Start – End</th>
                   <th scope="col">Status</th>
-                  {isInstructor && <th scope="col">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -392,21 +443,6 @@ export default function SchedulePage() {
                         {b.status}
                       </span>
                     </td>
-                    {isInstructor && (
-                      <td>
-                        {canAcceptBooking(b) && (
-                          <button
-                            type="button"
-                            className="schedule-form__submit"
-                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.875rem' }}
-                            disabled={acceptingId === b.id}
-                            onClick={() => b.id && onAcceptBooking(b.id)}
-                          >
-                            {acceptingId === b.id ? 'Accepting…' : 'Assign to me'}
-                          </button>
-                        )}
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
@@ -414,6 +450,7 @@ export default function SchedulePage() {
           )}
         </div>
       </section>
+      )}
 
       <section className="schedule-section" aria-labelledby="all-bookings-title">
         <h2 id="all-bookings-title" className="schedule-section__title">All bookings</h2>

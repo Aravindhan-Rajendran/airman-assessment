@@ -250,6 +250,16 @@ export type Booking = {
   instructor?: { id: string; email: string } | null;
 };
 
+export type InstructorAvailability = {
+  id: string;
+  tenantId: string;
+  instructorId: string;
+  startAt: string;
+  endAt: string;
+  createdAt: string;
+  instructor?: { id: string; email: string } | null;
+};
+
 export type AuditLogEntry = {
   id: string;
   action: string;
@@ -301,6 +311,6 @@ export const schedulingApi = {
     const q = new URLSearchParams();
     if (params?.page) q.set('page', String(params.page));
     if (params?.limit) q.set('limit', String(params.limit));
-    return api<{ data: unknown[]; total: number }>(`/api/scheduling/availability?${q}`);
+    return api<{ data: InstructorAvailability[]; total: number }>(`/api/scheduling/availability?${q}`);
   },
 };

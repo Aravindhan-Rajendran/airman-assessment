@@ -21,4 +21,11 @@ export const cacheService = {
   async del(key: string): Promise<void> {
     memory.delete(key);
   },
+
+  /** Delete all keys that start with the given prefix (e.g. to invalidate bookings list after mutations). */
+  async delByPrefix(prefix: string): Promise<void> {
+    for (const key of memory.keys()) {
+      if (key.startsWith(prefix)) memory.delete(key);
+    }
+  },
 };

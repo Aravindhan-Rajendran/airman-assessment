@@ -99,6 +99,7 @@ router.get(
           skip,
           take: limit,
           orderBy: { startAt: 'asc' },
+          include: { instructor: { select: { id: true, email: true } } },
         }),
         prisma.instructorAvailability.count({ where: { tenantId } }),
       ]);
@@ -190,6 +191,7 @@ router.patch(
         afterState: JSON.stringify({ status: 'APPROVED' }),
         correlationId: req.headers['x-correlation-id'] as string,
       });
+      await cacheService.delByPrefix(`bookings:${tenantId}:`);
       res.json(updated);
     } catch (e) {
       next(e);
@@ -231,6 +233,7 @@ router.patch(
         afterState: JSON.stringify({ status: 'ASSIGNED', instructorId: body.instructorId }),
         correlationId: req.headers['x-correlation-id'] as string,
       });
+      await cacheService.delByPrefix(`bookings:${tenantId}:`);
       res.json(updated);
     } catch (e) {
       if (e instanceof z.ZodError)
@@ -283,6 +286,7 @@ router.patch(
         afterState: JSON.stringify({ status: 'ASSIGNED', instructorId }),
         correlationId: req.headers['x-correlation-id'] as string,
       });
+      await cacheService.delByPrefix(`bookings:${tenantId}:`);
       res.json(updated);
     } catch (e) {
       if (e instanceof z.ZodError)
@@ -325,6 +329,7 @@ router.patch(
         afterState: JSON.stringify({ status: 'COMPLETED' }),
         correlationId: req.headers['x-correlation-id'] as string,
       });
+      await cacheService.delByPrefix(`bookings:${tenantId}:`);
       res.json(updated);
     } catch (e) {
       next(e);
@@ -366,6 +371,7 @@ router.patch(
         afterState: JSON.stringify({ status: 'CANCELLED' }),
         correlationId: req.headers['x-correlation-id'] as string,
       });
+      await cacheService.delByPrefix(`bookings:${tenantId}:`);
       res.json(updated);
     } catch (e) {
       next(e);
